@@ -372,7 +372,7 @@ class Entry(object):
 
                 acc1 = None
                 acc5 = None
-
+                print("==emb:",emb.shape,"\tloss: ",loss,"\tprob: ",prob)
                 if self.loss_type in ["dist_softmax", "dist_arcface"]:
                     if self.calc_train_acc:
                         shard_prob = loss._get_info("shard_prob")
@@ -382,6 +382,7 @@ class Entry(object):
                         prob_list = fluid.layers.split(prob_all, dim=0,
                             num_or_sections=num_trainers)
                         prob = fluid.layers.concat(prob_list, axis=1)
+                        print("==shard_prob:",shard_prob,"\tprob_all: ",prob_all,"\tprob_list ",prob_list)
                         label_all = fluid.layers.collective._c_allgather(label,
                             nranks=num_trainers, use_calc_stream=True)
                         acc1 = fluid.layers.accuracy(input=prob, label=label_all, k=1)
@@ -826,6 +827,7 @@ class Entry(object):
                 local_train_info[0].append(np.array(loss)[0])
                 local_train_info[1].append(np.array(lr)[0])
                 if batch_id % inspect_steps == 0:
+                    print("loss:",loss)
                     avg_loss = np.mean(local_train_info[0])
                     avg_lr = np.mean(local_train_info[1])
                     if self.calc_train_acc:

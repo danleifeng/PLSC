@@ -478,12 +478,15 @@ class DistributedClassifier(object):
         shard_max = nn.reduce_max(shard_logit, dim=1, keep_dim=True)
         global_max = collective._c_allreduce(
             shard_max, reduce_type='max', use_calc_stream=True)
+        global_max = fluid.layers.Print(global_max, message="===The global_max:")
         shard_logit_new = nn.elementwise_sub(shard_logit, global_max)
 
         shard_exp = ops.exp(shard_logit_new)
         shard_demon = nn.reduce_sum(shard_exp, dim=1, keep_dim=True)
+        shard_demon = fluid.layers.Print(shard_demon, message="===The shard_demon:")
         global_demon = collective._c_allreduce(
             shard_demon, reduce_type='sum', use_calc_stream=True)
+        global_demon = fluid.layers.Print(global_demon, message="===The global_demon:")
 
         global_log_demon = nn.log(global_demon)
         shard_log_prob = shard_logit_new - global_log_demon
@@ -491,11 +494,16 @@ class DistributedClassifier(object):
 
         shard_one_hot = nn.one_hot(
             shard_label, depth=self.shard_dim, allow_out_of_range=True)
+        shard_log_prob = fluid.layers.Print(shard_log_prob, message="===The shard_log_prob:")
+        shard_one_hot = fluid.layers.Print(shard_one_hot, message="===The shard_one_hot:")
         target_log_prob = nn.reduce_min(
             shard_log_prob * shard_one_hot, dim=1, keep_dim=True)
+
         shard_loss = nn.scale(target_log_prob, scale=-1.0)
+        shard_loss = fluid.layers.Print(shard_loss, message="===The shard_loss:")
         global_loss = collective._c_reducescatter(
             shard_loss, nranks=self.nranks, use_calc_stream=True)
+        global_loss = fluid.layers.Print(global_loss, message="===The global_loss:")
         return global_loss, shard_prob
 
     def softmax_classify(self,
@@ -505,6 +513,7 @@ class DistributedClassifier(object):
                          use_bias=True,
                          bias_attr=None):
         flatten_dim = reduce(lambda a, b: a * b, x.shape[1:], 1)
+        print("flatten_dim:",flatten_dim)
         weight, bias = self.create_parameter(
             dtype=x.dtype,
             in_dim=flatten_dim,
@@ -533,7 +542,8 @@ class DistributedClassifier(object):
         global_loss, shard_prob = self.softmax_with_cross_entropy(shard_fc,
                                                                   shard_label)
         avg_loss = nn.mean(global_loss)
-
+        for x in [x_all,label_all,shard_fc,shard_label,global_loss,shard_prob]:
+            print(x)
         avg_loss._set_info('shard_logit', shard_fc)
         avg_loss._set_info('shard_prob', shard_prob)
         avg_loss._set_info('shard_label', shard_label)
@@ -657,6 +667,7 @@ def _distributed_softmax_classify(x,
     if name is None:
         name = 'dist@softmax@rank@%05d' % rank_id
     helper = LayerHelper(name, **locals())
+    print("into _distributed_softmax_classify,class_num:",class_num,"\tnranks: ",nranks,"\trank_id:",rank_id)
     classifier = DistributedClassifier(class_num, nranks, rank_id, helper)
     return classifier.softmax_classify(x, label, param_attr, use_bias,
                                        bias_attr)
